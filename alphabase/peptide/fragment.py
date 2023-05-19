@@ -379,6 +379,27 @@ def concat_precursor_fragment_dataframes(
         ]
     )
 
+def get_multiple_modloss(m_list: list, bin: int):
+    '''
+
+    Parameters
+    ----------
+    m_list: List of numpy arrays of modlosses from calc modloss mass
+    bin: size of b_mass or y_mass
+
+    Returns
+    -------
+    A list of numpy arrays, each the same size as b_mass or y_mass. Each element in list is for a different modloss
+    '''
+    bin = int(bin / len(m_list))
+
+    all_modlosses = []
+    for i in np.arange(0, max([l.size for l in m_list]), bin):
+        all_modlosses.append(
+            np.concatenate([l[i:i+bin] if l.size > i+bin-1 else np.zeros(bin) for l in m_list]))
+
+    return all_modlosses
+
 def calc_fragment_mz_values_for_same_nAA(
     df_group:pd.DataFrame, 
     nAA:int, 
@@ -414,17 +435,17 @@ def calc_fragment_mz_values_for_same_nAA(
 
     for charged_frag_type in charged_frag_types:
         if charged_frag_type.startswith('b_modloss'):
-            b_modloss = np.concatenate([
+            b_modloss = get_multiple_modloss([
                 calc_modloss_mass(nAA, mods, sites, True)
                 for mods, sites in zip(mod_list, site_list)
-            ])
+            ], b_mass.shape[0])
             break
     for charged_frag_type in charged_frag_types:
         if charged_frag_type.startswith('y_modloss'):
-            y_modloss = np.concatenate([
+            y_modloss = get_multiple_modloss([
                 calc_modloss_mass(nAA, mods, sites, False)
                 for mods, sites in zip(mod_list, site_list)
-            ])
+            ], y_mass.shape[0])
             break
 
     mz_values = []
@@ -443,11 +464,25 @@ def calc_fragment_mz_values_for_same_nAA(
         elif frag_type == 'y':
             _mass = y_mass/charge + add_proton
         elif frag_type == 'b_modloss':
-            _mass = (b_mass-b_modloss)/charge + add_proton
-            _mass[b_modloss == 0] = 0
+            _mass = (b_mass-b_modloss[0])/charge + add_proton
+            _mass[b_modloss[0] == 0] = 0
         elif frag_type == 'y_modloss':
-            _mass = (y_mass-y_modloss)/charge + add_proton
-            _mass[y_modloss == 0] = 0
+            _mass = (y_mass-y_modloss[0])/charge + add_proton
+            _mass[y_modloss[0] == 0] = 0
+        elif frag_type.startswith('b_modloss'):
+            idx = int(frag_type[9:])
+            if idx < len(b_modloss):
+                _mass = (b_mass-b_modloss[idx])/charge + add_proton
+                _mass[b_modloss[idx] == 0] = 0
+            else:
+                _mass = np.zeros(_mass.shape)
+        elif frag_type.startswith('y_modloss'):
+            idx = int(frag_type[9:])
+            if idx < len(y_modloss):
+                _mass = (y_mass-y_modloss[idx])/charge + add_proton
+                _mass[y_modloss[idx] == 0] = 0
+            else:
+                _mass = np.zeros(_mass.shape)
         elif frag_type in frag_mass_from_ref_ion_dict:
             ref_ion = frag_mass_from_ref_ion_dict[frag_type]['ref_ion']
             add_mass = frag_mass_from_ref_ion_dict[frag_type]['add_mass']

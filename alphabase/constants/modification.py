@@ -73,6 +73,7 @@ def add_modifications_for_lower_case_AA():
 
 def keep_modloss_by_importance(modloss_importance_level:float=1.0):
     MOD_DF['modloss'] = MOD_DF['modloss_original']
+    MOD_DF['modloss'] = MOD_DF['modloss'].astype('object')
     MOD_DF.loc[MOD_DF.modloss_importance<modloss_importance_level,"modloss"] = 0
     MOD_LOSS_MASS.clear()
     MOD_LOSS_MASS.update(MOD_DF['modloss'].to_dict())
@@ -348,9 +349,23 @@ def calc_modloss_mass(
         mod_loss masses
     '''
     if len(mod_names) == 0: return np.zeros(nAA-1)
-    mod_losses = np.zeros(nAA+2)
-    mod_losses[mod_sites] = [MOD_LOSS_MASS[mod] for mod in mod_names]
+    modloss_list = [MOD_LOSS_MASS[mod] for mod in mod_names]
+    np_height = max([len(m) if isinstance(m, list) else 1 for m in modloss_list])
 
+    if np_height != 1:
+        mod_losses = np.zeros((np_height, nAA + 2))
+        for site, m in zip(mod_sites, modloss_list):
+            if isinstance(m, list):
+                mod_losses[0:len(m), site] = np.array(m)
+            else:
+                mod_losses[0, site] = m
+        if for_nterm_frag:
+            return np.concatenate([_calc_modloss(mod_losses[i, :])[1:-2] for i in range(mod_losses.shape[0])], axis = 0)
+        else:
+            return np.concatenate([_calc_modloss(mod_losses[i, ::-1])[-3:0:-1] for i in range(mod_losses.shape[0])], axis = 0)
+
+    mod_losses = np.zeros(nAA+2)
+    mod_losses[mod_sites] = modloss_list
     if for_nterm_frag:
         return _calc_modloss(mod_losses)[1:-2]
     else:
@@ -370,12 +385,19 @@ def _add_a_new_modification(
         mod_name, composition, modloss_composition,
         'User-added', 0
     ]
-    MOD_DF.loc[mod_name,['mass','modloss']] = (
-        calc_mass_from_formula(composition),
-        calc_mass_from_formula(modloss_composition)
-    )
-    if MOD_DF.loc[mod_name, 'modloss'] > 0:
+    if "," in modloss_composition:
+        MOD_DF.loc[mod_name,['mass','modloss']] = (
+            calc_mass_from_formula(composition),
+            [calc_mass_from_formula(mc) for mc in modloss_composition.split(",")]
+        )
         MOD_DF.loc[mod_name, 'modloss_importance'] = 1e10
+    else:
+        MOD_DF.loc[mod_name,['mass','modloss']] = (
+            calc_mass_from_formula(composition),
+            calc_mass_from_formula(modloss_composition)
+        )
+        if MOD_DF.loc[mod_name, 'modloss'] > 0:
+            MOD_DF.loc[mod_name, 'modloss_importance'] = 1e10
     MOD_DF.fillna(0, inplace=True)
     # update_all_by_MOD_DF()
 
